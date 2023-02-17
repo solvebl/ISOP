@@ -54,7 +54,7 @@ gunzip -r $R2
 ```
 
 # 2 - FastQC on raw reads 
-Check quality of raw reads using the program FastQC
+Check quality of raw reads using the program FastQC (https://www.bioinformatics.babraham.ac.uk/projects/fastqc/). 
 
 ```
 sbatch --array=1-N jobscripts/fastqc_raw.sh
@@ -93,7 +93,7 @@ scp -r [your_username]@saga.sigma2.no:[full_path_on_saga]/results_quality_raw/*.
 ```
 
 # 3 - Clean reads
-Use the program Trimmomatic to remove adapters, low quality bases etc
+Use the program Trimmomatic (http://www.usadellab.org/cms/?page=trimmomatic) to remove adapters, low quality bases etc. Read manual (http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/TrimmomaticManual_V0.32.pdf) for detailed descriptions of the different settings.
 
 ```
 sbatch --array=1-N jobscripts/trimmomatic.sh 
@@ -126,7 +126,7 @@ gzip $R2
 ```
 
 # 4 - FastQC on cleaned reads	
-Check quality of cleaned reads using the program FastQC
+Check quality of cleaned reads using the program FastQC (https://www.bioinformatics.babraham.ac.uk/projects/fastqc/).
 
 ```
 sbatch --array=1-N jobscripts/fastqc_cleaned.sh
@@ -163,6 +163,7 @@ Transfer files to computer for visual check. This command should not be run from
 ```
 scp -r [your_username]@saga.sigma2.no:[full_path_on_saga]/results_quality_cleaned/*.html /mnt/c/ubuntu/[your_directory]
 ```
+If quality is good, move on to next step. If not, re-run step 3 with different settings (see Trimmomatic manual http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/TrimmomaticManual_V0.32.pdf).
 
 # 5 - Zip cleaned reads
 
