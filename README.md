@@ -11,7 +11,7 @@ ssh [your_username]@saga.sigma2.no
 ## Copy template directory
 ```
 cd /cluster/projects/nn9835k
-cp msc_template [your_name]
+cp -r msc_template [your_name]
 ```
 
 ## Move raw files to your user directory 
@@ -24,7 +24,7 @@ cd [your_name]
 The namelist should contain a list of the unique file/sample prefixes of your raw files, one per line. Also, edit raw file names if necessary.
 
 ```
-vi jobscript/namelist 
+vi jobscripts/namelist 
 ```
 
 Now, the following steps can be run from your user directory (cluster/projects/nn9835k/[your_name]. N is always the number of samples you have, and the number of rows in namelist.
@@ -45,8 +45,8 @@ sbatch --array=1-N jobscripts/unzip.sh
 
 #set name variable
 CURRENT_NAME=$(awk NR==$SLURM_ARRAY_TASK_ID jobscripts/namelist)
-R1=../raw_reads/$CURRENT_NAME"_R1.fastq.gz"
-R2=../raw_reads/$CURRENT_NAME"_R2.fastq.gz"
+R1=raw_reads/$CURRENT_NAME"_R1.fastq.gz"
+R2=raw_reads/$CURRENT_NAME"_R2.fastq.gz"
 
 #execute
 gunzip -r $R1
@@ -89,7 +89,10 @@ fastqc -o results_quality_raw  $R2
 ```
 Transfer files to computer for visual check. This command should not be run from Saga, but from a new Ubuntu window (or terminal window on Mac).
 ```
+#ubuntu
 scp -r [your_username]@saga.sigma2.no:[full_path_on_saga]/results_quality_raw/*.html /mnt/c/ubuntu/[your_directory]
+#mac
+scp -r [your_username]@saga.sigma2.no:[full_path_on_saga]/results_quality_raw/*.html [path_on_mac]
 ```
 
 # 3 - Clean reads
@@ -108,6 +111,7 @@ sbatch --array=1-N jobscripts/trimmomatic.sh
 
 #clear any inherited modules
 module --quiet purge 
+module load Java/17.0.2
 # exit on errors
 set -o errexit
 set -o nounset
@@ -161,7 +165,10 @@ fastqc -o results_quality_cleaned  $R2
 ```
 Transfer files to computer for visual check. This command should not be run from Saga, but from a new Ubuntu window (or terminal window on Mac).
 ```
+#ubuntu
 scp -r [your_username]@saga.sigma2.no:[full_path_on_saga]/results_quality_cleaned/*.html /mnt/c/ubuntu/[your_directory]
+#mac
+scp -r [your_username]@saga.sigma2.no:[full_path_on_saga]/results_quality_cleaned/*.html [path_on_mac]
 ```
 If quality is good, move on to next step. If not, re-run step 3 with different settings (see Trimmomatic manual http://www.usadellab.org/cms/uploads/supplementary/Trimmomatic/TrimmomaticManual_V0.32.pdf).
 
@@ -196,7 +203,7 @@ gzip $R4
 Use the pipeline Hybpiper to assemble and map your clean reads to a reference (https://github.com/mossmatters/HybPiper/wiki/Tutorial). This part of the pipeline generates very many temporary and output files. If you have many samples, you may have to submit your samples in bulk (e.g. --array=1-35, --array=36-70 etc.), to avoid exceeding disk quota. Wait for one bulk to finish before you submit a new one. Extraction of introns is optional (https://github.com/mossmatters/HybPiper/wiki/Introns).
 
 ```
-sbatch --array=1-2 jobscripts/hybpiper_assemble.sh
+sbatch --array=1-N jobscripts/hybpiper_assemble.sh
 ```
 ```
 #!/bin/bash
@@ -229,7 +236,7 @@ R1=../cleaned_reads/$CURRENT_NAME"_R1_paired.fastq.gz"
 R2=../cleaned_reads/$CURRENT_NAME"_R2_paired.fastq.gz"
 
 #execute
-hybpiper assemble -r $R1 $R2 -t_dna ../../Solveig/NewTargets/mega353.fasta --bwa --prefix $CURRENT_NAME --cpu=${SLURM_NTASKS}  
+hybpiper assemble -r $R1 $R2 -t_dna /cluster/projects/nn9835k/Solveig/NewTargets/mega353.fasta --bwa --prefix $CURRENT_NAME --cpu=${SLURM_NTASKS}  
 #--run_intronerate
 #--run_intronerate --start_from exonerate_contigs
 ```
@@ -251,7 +258,7 @@ sbatch jobscripts/hybpiper_stats.sh
 #load Anaconda3
 module load Anaconda3/2019.03
 
-#Set the ${PS1} (needed in the source of the Anaconda environment)
+#set the ${PS1} (needed in the source of the Anaconda environment)
 export PS1=\$
 
 #source the conda environment setup
@@ -264,7 +271,8 @@ conda deactivate &>/dev/null
 conda activate /cluster/projects/nn9835k/conda_envs/hybpiper
 cd hybpiper 
 
-hybpiper stats -t_dna ../../Solveig/NewTargets/mega353.fasta gene ../jobscripts/namelist
+#execute
+hybpiper stats -t_dna /cluster/projects/nn9835k/Solveig/NewTargets/mega353.fasta gene ../jobscripts/namelist
 ```
 
 # 8 - HybPiper recovery heatmap 
@@ -284,7 +292,7 @@ sbatch jobscripts/hybpiper_recovery_heatmap.sh
 #load Anaconda3
 module load Anaconda3/2019.03
 
-#Set the ${PS1} (needed in the source of the Anaconda environment)
+#set the ${PS1} (needed in the source of the Anaconda environment)
 export PS1=\$
 
 #source the conda environment setup
@@ -297,6 +305,7 @@ conda deactivate &>/dev/null
 conda activate /cluster/projects/nn9835k/conda_envs/hybpiper
 cd hybpiper
 
+#execute
 hybpiper recovery_heatmap seq_lengths.tsv
 ```
 
@@ -317,7 +326,7 @@ sbatch jobscripts/hybpiper_retrieve_sequences.sh
 #load Anaconda3
 module load Anaconda3/2019.03
 
-#Set the ${PS1} (needed in the source of the Anaconda environment)
+#set the ${PS1} (needed in the source of the Anaconda environment)
 export PS1=\$
 
 #source the conda environment setup
@@ -329,8 +338,9 @@ conda deactivate &>/dev/null
 #activate the environment by using the full path (not name)
 conda activate /cluster/projects/nn9835k/conda_envs/hybpiper
 cd hybpiper
-	
-hybpiper retrieve_sequences dna -t_dna ../../Solveig/NewTargets/mega353.fasta --sample_names ../jobscripts/namelist --fasta_dir sequences 
+
+#execute
+hybpiper retrieve_sequences dna -t_dna /cluster/projects/nn9835k/Solveig/NewTargets/mega353.fasta --sample_names ../jobscripts/namelist --fasta_dir sequences
 ```
 
 The next two steps are optional.
@@ -366,7 +376,7 @@ conda activate /cluster/projects/nn9835k/conda_envs/hybpiper
 cd hybpiper
 
 #execute 
-hybpiper paralog_retriever ../jobscripts/namelist -t_dna ../../Solveig/NewTargets/mega353.fasta
+hybpiper paralog_retriever ../jobscripts/namelist -t_dna /cluster/projects/nn9835k/Solveig/NewTargets/mega353.fasta
 ```
 View the output file 'paralogs_above_threshold_report.txt', select and copy the list of genes. Open a plain text file called 'paraloglist'. Paste the list of genes and save the file. Move the new file to your HybPiper directory.
 ```
@@ -417,7 +427,10 @@ mv paraloglist paralogfiles
 ```
 At last, move whatever you need to computer. Run this command from a new Ubuntu window (or terminal window on Mac).
 ```
+#ubuntu
 scp -r [your_username]@saga.sigma2.no:/cluster/projects/nn9835k/[your_name]/hybpiper /mnt/c/ubuntu/[your_directory]
+#mac
+scp -r [your_username]@saga.sigma2.no:/cluster/projects/nn9835k/[your_name]/hybpiper [path_on_mac]
 ```
 
 You made it!! 
