@@ -1,6 +1,6 @@
 # READS TO TREES WORKFLOW v. 160223
 
-This workflow is meant for handling target capture data using the angiosperms353 bait kit. The input data is raw reads (.fastq) and final output is unaligned gene sequences (.fasta/.FNA). The workflow should be run on the Saga cluster (https://documentation.sigma2.no/hpc_machines/saga.html). All code starting with #!/bin/bash should be saved as separate, plain text files, and run as a jobscripts (https://documentation.sigma2.no/jobs/job_scripts.html).
+This workflow is meant for handling target capture data using the angiosperms353 bait kit. The input data is raw reads (.fastq) and final output is a species tree from ASTRAL (.tree). The workflow should be run on the Saga cluster (https://documentation.sigma2.no/hpc_machines/saga.html). All code starting with #!/bin/bash should be saved as separate, plain text files, and run as a jobscripts (https://documentation.sigma2.no/jobs/job_scripts.html).
 
 # Before you start
 
@@ -437,7 +437,7 @@ Inspect your parlog trees manually. For all genes that show signs of an ancient 
 # 12 - Download outgroups
 Download outgroups from kew tree of life (https://treeoflife.kew.org/tree-of-life).
 Edit the jobscript according to which genera you want to include. 
-Edit your genelist if you removed some genes from the analysis following paralog investigation in step 11.
+Prepare a genelist the same way as you prepared your namelist: a list of genes names, one per line. Make sure to edit your genelist if you removed some genes from the analysis following paralog investigation in step 11.
 
 ```
 sbatch --array=1-353 jobscripts/get_outgroups.sh 
