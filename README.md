@@ -425,12 +425,279 @@ mv paralogs* paralogfiles
 mv paralog_* paralogfiles
 mv paraloglist paralogfiles
 ```
-At last, move whatever you need to computer. Run this command from a new Ubuntu window (or terminal window on Mac).
+Move whatever you need to computer. Run this command from a new Ubuntu window (or terminal window on Mac).
 ```
 #ubuntu
 scp -r [your_username]@saga.sigma2.no:/cluster/projects/nn9835k/[your_name]/hybpiper /mnt/c/ubuntu/[your_directory]
 #mac
 scp -r [your_username]@saga.sigma2.no:/cluster/projects/nn9835k/[your_name]/hybpiper [path_on_mac]
 ```
+Inspect your parlog trees manually. For all genes that show signs of an ancient duplication event, remove them form hybpiper/sequences/ before continuing. 
 
-You made it!! 
+# 12 - Download outgroups
+Download outgroups from kew tree of life (https://treeoflife.kew.org/tree-of-life).
+Edit the jobscript according to which genera you want to include. 
+Edit your genelist if you removed some genes from the analysis following paralog investigation in step 11.
+
+```
+sbatch --array=1-353 jobscripts/get_outgroups.sh 
+```
+```
+#!/bin/bash
+#SBATCH --account=nn9835k
+#SBATCH --job-name=get_outgroups
+#SBATCH --time=01:00:00
+#SBATCH --mem-per-cpu=4G
+#SBATCH --ntasks=1 --cpus-per-task=1 --ntasks-per-node=1
+
+#load Anaconda3
+module load Anaconda3/2019.03
+module load Biopython/1.79-foss-2022a
+
+# set the input file to process
+name=$(sed -n ${SLURM_ARRAY_TASK_ID}p jobscripts/genelist)
+
+#execute
+python /cluster/projects/nn9835k/kew_353_outgroups/breakfasta.py -f /cluster/projects/nn9835k/kew_353_outgroups/"$name".dna.fasta -d "$name"_outgroups.fasta -i Brodiaea Ornithogalum -s
+
+mv "$name"_outgroups.fasta outgroups
+```
+
+# 13 - Concatenate in- and outgroup
+Concatenate outgroup-fasta-files with your ingroup-fasta-files. 
+
+```
+sbatch --array=1-353 jobscripts/concat_fastas.sh 
+```
+```
+#!/bin/bash
+#SBATCH --account=nn9835k
+#SBATCH --job-name=concat_fastas
+#SBATCH --time=01:00:00
+#SBATCH --mem-per-cpu=4G
+#SBATCH --ntasks=1 --cpus-per-task=1 --ntasks-per-node=1
+
+#load Anaconda3
+module load Anaconda3/2019.03
+module load Biopython/1.79-foss-2022a
+
+#set the input file to process
+name=$(sed -n ${SLURM_ARRAY_TASK_ID}p jobscripts/genelist)
+
+#execute
+python3 /cluster/projects/nn9835k/conda_envs/AMAS/lib/python3.10/site-packages/amas/AMAS.py concat -f fasta -d dna -i hybpiper/sequences/"$name".FNA outgroups/"$name"_outgroups.fasta -u fasta -t "$name"_w_outgroups.fasta
+
+mv "$name"_w_outgroups.fasta unaligned
+```
+
+# 14 - Change header names inside fasta-file
+We need to change the naming of the headers inside the fasta files for the rest of the steps to work properly.
+Change input and output folders in python script before running.
+
+```
+python3 change_fastas.py
+```
+```
+import os
+
+#define the directory containing the input files
+input_dir = '/cluster/projects/nn9835k/Solveig/unaligned_fastas/kew_outgroups'
+
+#define the directory to write the updated files to
+output_dir = '/cluster/projects/nn9835k/Solveig/unaligned_fastas/kew_outgroups/edited_fastas'
+
+#loop over each file in the input directory
+for filename in os.listdir(input_dir):
+    #only consider files with the .fasta extension
+    if filename.endswith(".fasta"):
+        #open the input file for reading and the output file for writing
+        with open(os.path.join(input_dir, filename), "r") as input_file, \
+             open(os.path.join(output_dir, filename), "w") as output_file:
+            #loop over each line in the input file
+            for line in input_file:
+                #check if the line is a header line
+                if line.startswith(">"):
+                    #split the header line by whitespace
+                    header_parts = line.strip().split()
+                    #only keep the first part of the header
+                    header = header_parts[0]
+                    #write out the updated header to the output file
+                    output_file.write(header + "\n")
+                else:
+                    #write out the sequence line to the output file
+                    output_file.write(line)
+```
+
+# 15 - Multiple alignments and alignment trimming 
+Alignments are made with mafft (https://mafft.cbrc.jp/alignment/software/linux.html), trimming with clipkit (https://github.com/JLSteenwyk/ClipKIT).
+Settings might need adjustment, check software documentation for details.
+
+```
+sbatch --array=1-353 jobscripts/align_trim.sh
+```
+```
+#!/bin/bash
+#SBATCH --account=nn9835k 
+#SBATCH --time=6:00:00
+#SBATCH --job-name=align_trim
+#SBATCH --nodes=1 --ntasks=8
+#SBATCH --mem-per-cpu=4G
+
+#load Anaconda3
+module load Anaconda3/2019.03
+
+#set the ${PS1} (needed in the source of the Anaconda environment)
+export PS1=\$
+
+#source the conda environment setup
+source ${EBROOTANACONDA3}/etc/profile.d/conda.sh
+#source ${EBROOTMINICONDA3}/etc/profile.d/conda.sh
+
+#deactivate any spill-over environment from the login node
+conda deactivate &>/dev/null
+
+conda activate /cluster/projects/nn9835k/conda_envs/clipkit
+module --quiet purge
+module load MAFFT/7.470-gompi-2020a-with-extensions
+
+#set the input file to process
+name=$(sed -n ${SLURM_ARRAY_TASK_ID}p jobscripts/genelist)
+
+#run mafft 
+mafft --auto unaligned/"$name"_w_outgroups_edited.fasta > "$name"_aligned.fasta
+mv "$name"_aligned.fasta aligned
+#run clipcit
+clipkit 
+clipkit aligned/"$name"_aligned.fasta -o "$name"_aligned_trimmed.fasta -m gappy
+mv "$name"_aligned_trimmed.fasta aligned_trimmed
+```
+
+# 16 - Alignment summaries
+Summarizes alignment statistics using AMAS (https://github.com/marekborowiec/AMAS).
+
+```
+sbatch jobscripts/alignment_summary.sh
+```
+```
+#!/bin/bash
+#SBATCH --account=nn9835k
+#SBATCH --job-name=alignment_summary
+#SBATCH --time=01:00:00
+#SBATCH --mem-per-cpu=4G
+#SBATCH --ntasks=1 --cpus-per-task=1 --ntasks-per-node=1
+
+#load Anaconda3
+module load Anaconda3/2019.03
+module load Biopython/1.79-foss-2022a
+
+#execute
+python3 /cluster/projects/nn9835k/conda_envs/AMAS/lib/python3.10/site-packages/amas/AMAS.py summary -f fasta -d dna -i aligned/*.fasta -o alignment_summaries.txt
+```
+
+# 17 - Make gene trees
+Make individual gene trees for all your trimmed alignments using iq-tree (http://www.iqtree.org/).
+You might want to adjust settings, see software documentation for details.
+
+```
+sbatch --array=1-353 jobscripts/iqtree.sh
+```
+```
+#!/bin/bash
+#SBATCH --account=nn9835k 
+#SBATCH --time=6:00:00
+#SBATCH --job-name=iqtree_genetrees
+#SBATCH --nodes=1 --ntasks=8
+#SBATCH --mem-per-cpu=4G
+
+module --quiet purge
+module load Anaconda3/2022.05
+module load IQ-TREE/2.2.1-gompi-2021b 
+module list
+
+#set the input file to process
+name=$(sed -n ${SLURM_ARRAY_TASK_ID}p jobscripts/genelist)
+
+#execute
+iqtree2 -s aligned_trimmed/"$name"_aligned_trimmed.fasta -B 1000
+mv aligned_trimmed/"$name"_aligned_trimmed.fasta.* iqtree
+```
+
+# 18 - Concatenate gene trees
+Concatenate all gene tree files as required for the neext step.
+
+```
+sbatch jobscripts/concat_genetrees.sh
+```
+```
+#!/bin/bash
+#SBATCH --account=nn9835k
+#SBATCH --job-name=concat_gene_trees
+#SBATCH --time=01:00:00
+#SBATCH --mem-per-cpu=3G
+#SBATCH --ntasks=1 --cpus-per-task=1 --ntasks-per-node=1
+
+cat iqtree/*.contree > astral/genetrees_concat.trees
+```
+
+# 19 - Make species tree 
+Make species tree using astral (https://github.com/smirarab/ASTRAL/blob/master/astral-tutorial.md).
+You might want to adjust settings, see software documentation for details.               
+
+```
+sbatch jobscripts/astral.sh
+```
+```
+#!/bin/bash
+#SBATCH --account=nn9835k 
+#SBATCH --time=8:00:00
+#SBATCH --job-name=astral
+#SBATCH --nodes=1 --ntasks=8
+#SBATCH --mem-per-cpu=4G
+
+#clear any inherited modules
+module --quiet purge 
+#load java
+module load Java/17.0.2
+#exit on errors
+set -o errexit
+set -o nounset
+
+java -jar /cluster/projects/nn9835k/Astral/astral.5.7.8.jar -i genetrees_concat.trees -o speciestree.tree 2> astral.log
+```
+
+# 20 - Change tip labels 
+Changes names on tree tips, according to names of your accessions.
+You need to provide a key file (key_file.txt) with current and new names of samples/tips separated by tab, each sample on a new row. 
+
+```
+sbatch jobscripts/change_tip_labels.sh
+```
+```
+#!/bin/bash
+#SBATCH --account=nn9835k
+#SBATCH --job-name=change_fastaheaders
+#SBATCH --time=01:00:00
+#SBATCH --mem-per-cpu=4G
+#SBATCH --ntasks=1 --cpus-per-task=1 --ntasks-per-node=1
+
+#load Anaconda3
+module load Anaconda3/2019.03
+
+#set the ${PS1} (needed in the source of the Anaconda environment)
+export PS1=\$
+
+#source the conda environment setup
+source ${EBROOTANACONDA3}/etc/profile.d/conda.sh
+#source ${EBROOTMINICONDA3}/etc/profile.d/conda.sh
+
+#deactivate any spill-over environment from the login node
+conda deactivate &>/dev/null
+#activate ete3
+conda activate /cluster/projects/nn9835k/conda_envs/ete3
+
+#execute
+python3 /cluster/projects/nn9835k/kew_353_outgroups/change_tip_labels.py astral/species.tree jobscripts/key_file.txt > astral_tree_edited.tree
+mv astral_tree_edited.tree astral
+```
+
+Now, move your edited tree-file to your computer, and look at the beautiful tree you made!!
