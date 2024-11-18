@@ -1,4 +1,4 @@
-# READS TO SEQUENCES WORKFLOW v. 160223
+# READS TO TREES WORKFLOW v. 160223
 
 This workflow is meant for handling target capture data using the angiosperms353 bait kit. The input data is raw reads (.fastq) and final output is unaligned gene sequences (.fasta/.FNA). The workflow should be run on the Saga cluster (https://documentation.sigma2.no/hpc_machines/saga.html). All code starting with #!/bin/bash should be saved as separate, plain text files, and run as a jobscripts (https://documentation.sigma2.no/jobs/job_scripts.html).
 
